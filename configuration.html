@@ -1,14 +1,16 @@
 <!DOCTYPE HTML>
-<html lang="en" class="sidebar-visible no-js light">
+<html lang="en" class="light" dir="ltr">
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
         <title>Configuration - Askama</title>
+
+
         <!-- Custom HTML head -->
-        <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+        
         <meta name="description" content="">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <meta name="theme-color" content="#ffffff" />
+        <meta name="theme-color" content="#ffffff">
 
         <link rel="icon" href="favicon.svg">
         <link rel="shortcut icon" href="favicon.png">
@@ -16,25 +18,29 @@
         <link rel="stylesheet" href="css/general.css">
         <link rel="stylesheet" href="css/chrome.css">
         <link rel="stylesheet" href="css/print.css" media="print">
+
         <!-- Fonts -->
         <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
         <link rel="stylesheet" href="fonts/fonts.css">
+
         <!-- Highlight.js Stylesheets -->
         <link rel="stylesheet" href="highlight.css">
         <link rel="stylesheet" href="tomorrow-night.css">
         <link rel="stylesheet" href="ayu-highlight.css">
 
         <!-- Custom theme stylesheets -->
+
     </head>
-    <body>
+    <body class="sidebar-visible no-js">
+    <div id="body-container">
         <!-- Provide site root to javascript -->
-        <script type="text/javascript">
+        <script>
             var path_to_root = "";
             var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
         </script>
 
         <!-- Work around some values being stored in localStorage wrapped in quotes -->
-        <script type="text/javascript">
+        <script>
             try {
                 var theme = localStorage.getItem('mdbook-theme');
                 var sidebar = localStorage.getItem('mdbook-sidebar');
@@ -50,50 +56,79 @@
         </script>
 
         <!-- Set the theme before any content is loaded, prevents flash -->
-        <script type="text/javascript">
+        <script>
             var theme;
             try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
             if (theme === null || theme === undefined) { theme = default_theme; }
             var html = document.querySelector('html');
-            html.classList.remove('no-js')
             html.classList.remove('light')
             html.classList.add(theme);
-            html.classList.add('js');
+            var body = document.querySelector('body');
+            body.classList.remove('no-js')
+            body.classList.add('js');
         </script>
 
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
         <!-- Hide / unhide sidebar before it is displayed -->
-        <script type="text/javascript">
-            var html = document.querySelector('html');
-            var sidebar = 'hidden';
+        <script>
+            var body = document.querySelector('body');
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
             if (document.body.clientWidth >= 1080) {
                 try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
                 sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
             }
-            html.classList.remove('sidebar-visible');
-            html.classList.add("sidebar-" + sidebar);
+            sidebar_toggle.checked = sidebar === 'visible';
+            body.classList.remove('sidebar-visible');
+            body.classList.add("sidebar-" + sidebar);
         </script>
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="askama.html"><strong aria-hidden="true">1.</strong> Askama</a></li><li class="chapter-item expanded "><a href="getting_started.html"><strong aria-hidden="true">2.</strong> Getting started</a></li><li class="chapter-item expanded "><a href="creating_templates.html"><strong aria-hidden="true">3.</strong> Creating templates</a></li><li class="chapter-item expanded "><a href="debugging.html"><strong aria-hidden="true">4.</strong> Debugging</a></li><li class="chapter-item expanded "><a href="configuration.html" class="active"><strong aria-hidden="true">5.</strong> Configuration</a></li><li class="chapter-item expanded "><a href="template_syntax.html"><strong aria-hidden="true">6.</strong> Template syntax</a></li><li class="chapter-item expanded "><a href="filters.html"><strong aria-hidden="true">7.</strong> Filters</a></li><li class="chapter-item expanded "><a href="integrations.html"><strong aria-hidden="true">8.</strong> Integrations</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="askama.html"><strong aria-hidden="true">1.</strong> Askama</a></li><li class="chapter-item expanded "><a href="getting_started.html"><strong aria-hidden="true">2.</strong> Getting started</a></li><li class="chapter-item expanded "><a href="creating_templates.html"><strong aria-hidden="true">3.</strong> Creating templates</a></li><li class="chapter-item expanded "><a href="debugging.html"><strong aria-hidden="true">4.</strong> Debugging</a></li><li class="chapter-item expanded "><a href="configuration.html" class="active"><strong aria-hidden="true">5.</strong> Configuration</a></li><li class="chapter-item expanded "><a href="template_syntax.html"><strong aria-hidden="true">6.</strong> Template syntax</a></li><li class="chapter-item expanded "><a href="filters.html"><strong aria-hidden="true">7.</strong> Filters</a></li><li class="chapter-item expanded "><a href="integrations.html"><strong aria-hidden="true">8.</strong> Integrations</a></li><li class="chapter-item expanded "><a href="performance.html"><strong aria-hidden="true">9.</strong> Performance</a></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
 
+        <!-- Track and set sidebar scroll position -->
+        <script>
+            var sidebarScrollbox = document.querySelector('#sidebar .sidebar-scrollbox');
+            sidebarScrollbox.addEventListener('click', function(e) {
+                if (e.target.tagName === 'A') {
+                    sessionStorage.setItem('sidebar-scroll', sidebarScrollbox.scrollTop);
+                }
+            }, { passive: true });
+            var sidebarScrollTop = sessionStorage.getItem('sidebar-scroll');
+            sessionStorage.removeItem('sidebar-scroll');
+            if (sidebarScrollTop) {
+                // preserve sidebar scroll position when navigating via links within sidebar
+                sidebarScrollbox.scrollTop = sidebarScrollTop;
+            } else {
+                // scroll sidebar to current active section when navigating via "next/previous chapter" buttons
+                var activeSection = document.querySelector('#sidebar .active');
+                if (activeSection) {
+                    activeSection.scrollIntoView({ block: 'center' });
+                }
+            }
+        </script>
+
         <div id="page-wrapper" class="page-wrapper">
 
             <div class="page">
-                <div id="menu-bar-hover-placeholder"></div>
-                <div id="menu-bar" class="menu-bar sticky bordered">
+                                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
                     <div class="left-buttons">
-                        <button id="sidebar-toggle" class="icon-button" type="button" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
                             <i class="fa fa-bars"></i>
-                        </button>
+                        </label>
                         <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
                             <i class="fa fa-paint-brush"></i>
                         </button>
                         <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
-                            <li role="none"><button role="menuitem" class="theme" id="light">Light (default)</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
                             <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
                             <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
                             <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
@@ -110,6 +145,7 @@
                         <a href="print.html" title="Print this book" aria-label="Print this book">
                             <i id="print-button" class="fa fa-print"></i>
                         </a>
+
                     </div>
                 </div>
 
@@ -123,8 +159,9 @@
                         </ul>
                     </div>
                 </div>
+
                 <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
-                <script type="text/javascript">
+                <script>
                     document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
                     document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
                     Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
@@ -143,7 +180,51 @@ custom syntax configuration and escaper configuration.</p>
 <pre><code class="language-toml">[general]
 # Directories to search for templates, relative to the crate root.
 dirs = [&quot;templates&quot;]
+# Unless you add a `-` in a block, whitespace characters won't be trimmed.
+whitespace = &quot;preserve&quot;
 </code></pre>
+<h2 id="whitespace-control"><a class="header" href="#whitespace-control">Whitespace control</a></h2>
+<p>In the default configuration, you can use the <code>-</code> operator to indicate that
+whitespace should be suppressed before or after a block. For example:</p>
+<pre><code class="language-jinja">&lt;div&gt;
+
+
+{%- if something %}
+Hello
+{% endif %}
+</code></pre>
+<p>In the template above, only the whitespace between <code>&lt;div&gt;</code> and <code>{%-</code> will be
+suppressed. If you set <code>whitespace</code> to <code>&quot;suppress&quot;</code>, whitespace characters before
+and after each block will be suppressed by default. To preserve the whitespace
+characters, you can use the <code>+</code> operator:</p>
+<pre><code class="language-jinja">{% if something +%}
+Hello
+{%+ endif %}
+</code></pre>
+<p>In this example, <code>Hello</code> will be surrounded with newline characters.</p>
+<p>There is a third possibility: in case you want to suppress all whitespace
+characters except one, you can use <code>~</code>:</p>
+<pre><code class="language-jinja">{% if something ~%}
+Hello
+{%~ endif %}
+</code></pre>
+<p>To be noted, if one of the trimmed characters is a newline, then the only
+character remaining will be a newline.</p>
+<p>If you want this to be the default behaviour, you can set <code>whitespace</code> to
+<code>&quot;minimize&quot;</code>.</p>
+<p>To be noted: you can also configure <code>whitespace</code> directly into the <code>template</code>
+derive proc macro:</p>
+<pre><pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[derive(Template)]
+#[template(whitespace = &quot;suppress&quot;)]
+pub struct SomeTemplate;
+<span class="boring">}</span></code></pre></pre>
+<p>If you configure <code>whitespace</code> directly into the <code>template</code> derive proc-macro,
+it will take precedence over the one in your configuration file. So in this
+case, if you already set <code>whitespace = &quot;minimize</code> into your configuration file,
+it will be replaced by <code>suppress</code> for this template.</p>
+<h2 id="custom-syntaxes"><a class="header" href="#custom-syntaxes">Custom syntaxes</a></h2>
 <p>Here is an example that defines two custom syntaxes:</p>
 <pre><code class="language-toml">[general]
 default_syntax = &quot;foo&quot;
@@ -172,14 +253,14 @@ names this syntax in the project.</p>
 <li><code>expr_start</code>, defaults to <code>{{</code></li>
 <li><code>expr_end</code>, defaults to <code>}}</code></li>
 </ul>
-<p>Values must be 2 characters long and start delimiters must all start with the same
-character. If a key is omitted, the value from the default syntax is used.</p>
+<p>Values must be at least two characters long.
+If a key is omitted, the value from the default syntax is used.</p>
 <p>Here is an example of a custom escaper:</p>
 <pre><code class="language-toml">[[escaper]]
 path = &quot;::tex_escape::Tex&quot;
 extensions = [&quot;tex&quot;]
 </code></pre>
-<p>An escaper block consists of the attributes <code>path</code> and <code>name</code>. <code>path</code>
+<p>An escaper block consists of the attributes <code>path</code> and <code>extensions</code>. <code>path</code>
 contains a Rust identifier that must be in scope for templates using this
 escaper. <code>extensions</code> defines a list of file extensions that will trigger
 the use of that escaper. Extensions are matched in order, starting with the
@@ -196,9 +277,11 @@ to the same escaper.</p>
                             <a rel="prev" href="debugging.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
-                            <a rel="next" href="template_syntax.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+
+                            <a rel="next prefetch" href="template_syntax.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
+
                         <div style="clear: both"></div>
                     </nav>
                 </div>
@@ -208,23 +291,33 @@ to the same escaper.</p>
                     <a rel="prev" href="debugging.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
-                    <a rel="next" href="template_syntax.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+
+                    <a rel="next prefetch" href="template_syntax.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
             </nav>
 
         </div>
 
-        <script type="text/javascript">
+
+
+
+        <script>
             window.playground_copyable = true;
         </script>
-        <script src="elasticlunr.min.js" type="text/javascript" charset="utf-8"></script>
-        <script src="mark.min.js" type="text/javascript" charset="utf-8"></script>
-        <script src="searcher.js" type="text/javascript" charset="utf-8"></script>
-        <script src="clipboard.min.js" type="text/javascript" charset="utf-8"></script>
-        <script src="highlight.js" type="text/javascript" charset="utf-8"></script>
-        <script src="book.js" type="text/javascript" charset="utf-8"></script>
+
+
+        <script src="elasticlunr.min.js"></script>
+        <script src="mark.min.js"></script>
+        <script src="searcher.js"></script>
+
+        <script src="clipboard.min.js"></script>
+        <script src="highlight.js"></script>
+        <script src="book.js"></script>
 
         <!-- Custom JS scripts -->
+
+
+    </div>
     </body>
 </html>

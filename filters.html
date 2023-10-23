@@ -1,14 +1,16 @@
 <!DOCTYPE HTML>
-<html lang="en" class="sidebar-visible no-js light">
+<html lang="en" class="light" dir="ltr">
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
         <title>Filters - Askama</title>
+
+
         <!-- Custom HTML head -->
-        <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+        
         <meta name="description" content="">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <meta name="theme-color" content="#ffffff" />
+        <meta name="theme-color" content="#ffffff">
 
         <link rel="icon" href="favicon.svg">
         <link rel="shortcut icon" href="favicon.png">
@@ -16,25 +18,29 @@
         <link rel="stylesheet" href="css/general.css">
         <link rel="stylesheet" href="css/chrome.css">
         <link rel="stylesheet" href="css/print.css" media="print">
+
         <!-- Fonts -->
         <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
         <link rel="stylesheet" href="fonts/fonts.css">
+
         <!-- Highlight.js Stylesheets -->
         <link rel="stylesheet" href="highlight.css">
         <link rel="stylesheet" href="tomorrow-night.css">
         <link rel="stylesheet" href="ayu-highlight.css">
 
         <!-- Custom theme stylesheets -->
+
     </head>
-    <body>
+    <body class="sidebar-visible no-js">
+    <div id="body-container">
         <!-- Provide site root to javascript -->
-        <script type="text/javascript">
+        <script>
             var path_to_root = "";
             var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
         </script>
 
         <!-- Work around some values being stored in localStorage wrapped in quotes -->
-        <script type="text/javascript">
+        <script>
             try {
                 var theme = localStorage.getItem('mdbook-theme');
                 var sidebar = localStorage.getItem('mdbook-sidebar');
@@ -50,50 +56,79 @@
         </script>
 
         <!-- Set the theme before any content is loaded, prevents flash -->
-        <script type="text/javascript">
+        <script>
             var theme;
             try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
             if (theme === null || theme === undefined) { theme = default_theme; }
             var html = document.querySelector('html');
-            html.classList.remove('no-js')
             html.classList.remove('light')
             html.classList.add(theme);
-            html.classList.add('js');
+            var body = document.querySelector('body');
+            body.classList.remove('no-js')
+            body.classList.add('js');
         </script>
 
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
         <!-- Hide / unhide sidebar before it is displayed -->
-        <script type="text/javascript">
-            var html = document.querySelector('html');
-            var sidebar = 'hidden';
+        <script>
+            var body = document.querySelector('body');
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
             if (document.body.clientWidth >= 1080) {
                 try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
                 sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
             }
-            html.classList.remove('sidebar-visible');
-            html.classList.add("sidebar-" + sidebar);
+            sidebar_toggle.checked = sidebar === 'visible';
+            body.classList.remove('sidebar-visible');
+            body.classList.add("sidebar-" + sidebar);
         </script>
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="askama.html"><strong aria-hidden="true">1.</strong> Askama</a></li><li class="chapter-item expanded "><a href="getting_started.html"><strong aria-hidden="true">2.</strong> Getting started</a></li><li class="chapter-item expanded "><a href="creating_templates.html"><strong aria-hidden="true">3.</strong> Creating templates</a></li><li class="chapter-item expanded "><a href="debugging.html"><strong aria-hidden="true">4.</strong> Debugging</a></li><li class="chapter-item expanded "><a href="configuration.html"><strong aria-hidden="true">5.</strong> Configuration</a></li><li class="chapter-item expanded "><a href="template_syntax.html"><strong aria-hidden="true">6.</strong> Template syntax</a></li><li class="chapter-item expanded "><a href="filters.html" class="active"><strong aria-hidden="true">7.</strong> Filters</a></li><li class="chapter-item expanded "><a href="integrations.html"><strong aria-hidden="true">8.</strong> Integrations</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="askama.html"><strong aria-hidden="true">1.</strong> Askama</a></li><li class="chapter-item expanded "><a href="getting_started.html"><strong aria-hidden="true">2.</strong> Getting started</a></li><li class="chapter-item expanded "><a href="creating_templates.html"><strong aria-hidden="true">3.</strong> Creating templates</a></li><li class="chapter-item expanded "><a href="debugging.html"><strong aria-hidden="true">4.</strong> Debugging</a></li><li class="chapter-item expanded "><a href="configuration.html"><strong aria-hidden="true">5.</strong> Configuration</a></li><li class="chapter-item expanded "><a href="template_syntax.html"><strong aria-hidden="true">6.</strong> Template syntax</a></li><li class="chapter-item expanded "><a href="filters.html" class="active"><strong aria-hidden="true">7.</strong> Filters</a></li><li class="chapter-item expanded "><a href="integrations.html"><strong aria-hidden="true">8.</strong> Integrations</a></li><li class="chapter-item expanded "><a href="performance.html"><strong aria-hidden="true">9.</strong> Performance</a></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
 
+        <!-- Track and set sidebar scroll position -->
+        <script>
+            var sidebarScrollbox = document.querySelector('#sidebar .sidebar-scrollbox');
+            sidebarScrollbox.addEventListener('click', function(e) {
+                if (e.target.tagName === 'A') {
+                    sessionStorage.setItem('sidebar-scroll', sidebarScrollbox.scrollTop);
+                }
+            }, { passive: true });
+            var sidebarScrollTop = sessionStorage.getItem('sidebar-scroll');
+            sessionStorage.removeItem('sidebar-scroll');
+            if (sidebarScrollTop) {
+                // preserve sidebar scroll position when navigating via links within sidebar
+                sidebarScrollbox.scrollTop = sidebarScrollTop;
+            } else {
+                // scroll sidebar to current active section when navigating via "next/previous chapter" buttons
+                var activeSection = document.querySelector('#sidebar .active');
+                if (activeSection) {
+                    activeSection.scrollIntoView({ block: 'center' });
+                }
+            }
+        </script>
+
         <div id="page-wrapper" class="page-wrapper">
 
             <div class="page">
-                <div id="menu-bar-hover-placeholder"></div>
-                <div id="menu-bar" class="menu-bar sticky bordered">
+                                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
                     <div class="left-buttons">
-                        <button id="sidebar-toggle" class="icon-button" type="button" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
                             <i class="fa fa-bars"></i>
-                        </button>
+                        </label>
                         <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
                             <i class="fa fa-paint-brush"></i>
                         </button>
                         <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
-                            <li role="none"><button role="menuitem" class="theme" id="light">Light (default)</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
                             <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
                             <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
                             <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
@@ -110,6 +145,7 @@
                         <a href="print.html" title="Print this book" aria-label="Print this book">
                             <i id="print-button" class="fa fa-print"></i>
                         </a>
+
                     </div>
                 </div>
 
@@ -123,8 +159,9 @@
                         </ul>
                     </div>
                 </div>
+
                 <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
-                <script type="text/javascript">
+                <script>
                     document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
                     document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
                     Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
@@ -145,7 +182,8 @@ Filters can be chained, in which case the output from one filter
 is passed to the next.</p>
 <pre><code>{{ &quot;HELLO&quot;|lower }}
 </code></pre>
-<p>Askama has a collection of built-in filters, documented below, but can also include custom filters. Additionally, the <code>json</code> and <code>yaml</code> filters are included in the built-in filters,
+<p>Askama has a collection of built-in filters, documented below, but can also include custom filters. 
+Additionally, the <code>json</code> and <code>yaml</code> filters are included in the built-in filters,
 but are disabled by default. Enable them with Cargo features (see below for more information).</p>
 <p><strong>Table of contents</strong></p>
 <ul>
@@ -207,7 +245,10 @@ but are disabled by default. Enable them with Cargo features (see below for more
 <p>Output:</p>
 <pre><code>Escape &amp;lt;&amp;gt;&amp;amp;
 </code></pre>
-<p>Optionally, it is possible to specify and override which escaper is used. Consider a template where the escaper is configured as <a href="creating_templates.html#the-template-attribute"><code>escape = &quot;none&quot;</code></a>. However, somewhere escaping using the HTML escaper is desired. Then it is possible to override and use the HTML escaper like this:</p>
+<p>Optionally, it is possible to specify and override which escaper is used. 
+Consider a template where the escaper is configured as <a href="creating_templates.html#the-template-attribute"><code>escape = &quot;none&quot;</code></a>. 
+However, somewhere escaping using the HTML escaper is desired. 
+Then it is possible to override and use the HTML escaper like this:</p>
 <pre><code class="language-jinja">{{ &quot;Don't Escape &lt;&gt;&amp;&quot;|escape }}
 {{ &quot;Don't Escape &lt;&gt;&amp;&quot;|e }}
 
@@ -322,7 +363,7 @@ Escape &amp;lt;&amp;gt;&amp;amp;
 <p>The following filters can be enabled by requesting the respective feature in the Cargo.toml
 <a href="https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html">dependencies section</a>, e.g.</p>
 <pre><code>[dependencies]
-askama = { version = &quot;0.11.0&quot;, features = &quot;serde-json&quot; }
+askama = { version = &quot;0.11.2&quot;, features = &quot;serde-json&quot; }
 </code></pre>
 <h3 id="json--tojson"><a class="header" href="#json--tojson"><code>json</code> | <code>tojson</code></a></h3>
 <p>Enabling the <code>serde-json</code> feature will enable the use of the <code>json</code> filter.
@@ -347,7 +388,7 @@ Ugly: &lt;script&gt;var data = '{{data|json|safe}}';&lt;/script&gt;
 </code></pre>
 <h3 id="markdown"><a class="header" href="#markdown"><code>markdown</code></a></h3>
 <p>Enabling the <code>markdown</code> feature will enable the use of the <code>markdown</code> filter.
-This will render a value using a <a href="https://docs.rs/comrak/0.12.*/comrak/">GitHub flavored CommonMark</a> syntax.
+This will render a value using a <a href="https://docs.rs/comrak/0.14.*/comrak/">GitHub flavored CommonMark</a> syntax.
 By default the extensions “autolink”, “strikethrough”, “tagfilter”, and “table” are enabled.
 Any raw HTML gets escaped.</p>
 <pre><code class="language-jinja">{{ &quot;**&lt;i&gt;Hello&lt;/i&gt;, world!**&quot;|markdown }}
@@ -364,16 +405,34 @@ This will output formatted YAML for any value that implements the required
 <pre><code class="language-jinja">{{ foo|yaml }}
 </code></pre>
 <h2 id="custom-filters"><a class="header" href="#custom-filters">Custom Filters</a></h2>
-<p>To define your own filters, simply have a module named filters in scope of the context deriving a <code>Template</code> impl.</p>
-<p>Note that in case of name collision, the built in filters take precedence.</p>
-<pre><pre class="playground"><code class="language-rust">#[derive(Template)]
+<p>To define your own filters, simply have a module named <code>filters</code> in scope of the context deriving a <code>Template</code> impl 
+and define the filters as functions within this module. 
+The functions must have at least one argument and the return type must be <code>::askama::Result&lt;T&gt;</code>.
+Although there are no restrictions on <code>T</code> for a single filter, 
+the final result of a chain of filters must implement <code>Display</code>. </p>
+<p>The arguments to the filters are passed as follows. 
+The first argument corresponds to the expression they are applied to. 
+Subsequent arguments, if any, must be given directly when calling the filter. 
+The first argument may or may not be a reference, depending on the context in which the filter is called. 
+To abstract over ownership, consider defining your argument as a trait bound.
+For example, the <code>trim</code> built-in filter accepts any value implementing <code>Display</code>. 
+Its signature is similar to <code>fn trim(s: impl std::fmt::Display) -&gt; ::askama::Result&lt;String&gt;</code>.</p>
+<p>Note that built-in filters have preference over custom filters, so, in case of name collision, the built-in filter is applied.</p>
+<h3 id="examples"><a class="header" href="#examples">Examples</a></h3>
+<p>Implementing a filter that replaces all instances of <code>&quot;oo&quot;</code> for <code>&quot;aa&quot;</code>.</p>
+<pre><pre class="playground"><code class="language-rust">use askama::Template;
+
+#[derive(Template)]
 #[template(source = &quot;{{ s|myfilter }}&quot;, ext = &quot;txt&quot;)]
 struct MyFilterTemplate&lt;'a&gt; {
     s: &amp;'a str,
 }
 
+// Any filter defined in the module `filters` is accessible in your template.
 mod filters {
-    pub fn myfilter(s: &amp;str) -&gt; ::askama::Result&lt;String&gt; {
+    // This filter does not have extra arguments
+    pub fn myfilter&lt;T: std::fmt::Display&gt;(s: T) -&gt; ::askama::Result&lt;String&gt; {
+        let s = s.to_string();
         Ok(s.replace(&quot;oo&quot;, &quot;aa&quot;))
     }
 }
@@ -381,8 +440,31 @@ mod filters {
 fn main() {
     let t = MyFilterTemplate { s: &quot;foo&quot; };
     assert_eq!(t.render().unwrap(), &quot;faa&quot;);
+}</code></pre></pre>
+<p>Implementing a filter that replaces all instances of <code>&quot;oo&quot;</code> for <code>n</code> times <code>&quot;a&quot;</code>.</p>
+<pre><pre class="playground"><code class="language-rust">use askama::Template;
+
+#[derive(Template)]
+#[template(source = &quot;{{ s|myfilter(4) }}&quot;, ext = &quot;txt&quot;)]
+struct MyFilterTemplate&lt;'a&gt; {
+    s: &amp;'a str,
 }
-</code></pre></pre>
+
+// Any filter defined in the module `filters` is accessible in your template.
+mod filters {
+    // This filter requires a `usize` input when called in templates
+    pub fn myfilter&lt;T: std::fmt::Display&gt;(s: T, n: usize) -&gt; ::askama::Result&lt;String&gt; {
+        let s = s.to_string();
+    	  let mut replace = String::with_capacity(n);
+    	  replace.extend((0..n).map(|_| &quot;a&quot;));
+        Ok(s.replace(&quot;oo&quot;, &amp;replace))
+    }
+}
+
+fn main() {
+    let t = MyFilterTemplate { s: &quot;foo&quot; };
+    assert_eq!(t.render().unwrap(), &quot;faaaa&quot;);
+}</code></pre></pre>
 
                     </main>
 
@@ -391,9 +473,11 @@ fn main() {
                             <a rel="prev" href="template_syntax.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
-                            <a rel="next" href="integrations.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+
+                            <a rel="next prefetch" href="integrations.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
+
                         <div style="clear: both"></div>
                     </nav>
                 </div>
@@ -403,23 +487,33 @@ fn main() {
                     <a rel="prev" href="template_syntax.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
-                    <a rel="next" href="integrations.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+
+                    <a rel="next prefetch" href="integrations.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
             </nav>
 
         </div>
 
-        <script type="text/javascript">
+
+
+
+        <script>
             window.playground_copyable = true;
         </script>
-        <script src="elasticlunr.min.js" type="text/javascript" charset="utf-8"></script>
-        <script src="mark.min.js" type="text/javascript" charset="utf-8"></script>
-        <script src="searcher.js" type="text/javascript" charset="utf-8"></script>
-        <script src="clipboard.min.js" type="text/javascript" charset="utf-8"></script>
-        <script src="highlight.js" type="text/javascript" charset="utf-8"></script>
-        <script src="book.js" type="text/javascript" charset="utf-8"></script>
+
+
+        <script src="elasticlunr.min.js"></script>
+        <script src="mark.min.js"></script>
+        <script src="searcher.js"></script>
+
+        <script src="clipboard.min.js"></script>
+        <script src="highlight.js"></script>
+        <script src="book.js"></script>
 
         <!-- Custom JS scripts -->
+
+
+    </div>
     </body>
 </html>

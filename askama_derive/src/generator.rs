@@ -8,10 +8,29 @@ use crate::input::{Source, TemplateInput};
 use crate::CompileError;
 
 use parser::node::{
-    Call, Comment, CondTest, If, Include, Let, Lit, Loop, Match, Target, Whitespace, Ws,
+    Call, Comment, CondTest, FilterBlock, If, Include, Let, Lit, Loop, Match, Target, Whitespace,
+    Ws,
 };
 use parser::{Expr, Node};
 use quote::quote;
+
+struct WriteParts {
+    size_hint: usize,
+    /// First buffer is the "buf format" and second is the "buf expr".
+    ///
+    /// If "buf expr" is None, it means we can generate code like this:
+    ///
+    /// ```ignore
+    /// let var = buf_format;
+    /// ```
+    ///
+    /// Otherwise we need to format the "buf expr" using the "buf format":
+    ///
+    /// ```ignore
+    /// let var = format!(buf_format, buf_expr);
+    /// ```
+    buffers: Option<(Buffer, Option<Buffer>)>,
+}
 
 pub(crate) struct Generator<'a> {
     // The template input state: original struct AST and attributes
@@ -420,6 +439,9 @@ impl<'a> Generator<'a> {
                 Node::Call(ref call) => {
                     size_hint += self.write_call(ctx, buf, call)?;
                 }
+                Node::FilterBlock(ref filter) => {
+                    size_hint += self.write_filter_block(ctx, buf, filter)?;
+                }
                 Node::Macro(ref m) => {
                     if level != AstLevel::Top {
                         return Err("macro blocks only allowed at the top level".into());
@@ -819,6 +841,55 @@ impl<'a> Generator<'a> {
         Ok(size_hint)
     }
 
+    fn write_filter_block(
+        &mut self,
+        ctx: &'a Context<'_>,
+        buf: &mut Buffer,
+        filter: &'a FilterBlock<'_>,
+    ) -> Result<usize, CompileError> {
+        self.flush_ws(filter.ws1);
+        let var_name = "__filter_block";
+        let current_buf = mem::take(&mut self.buf_writable);
+
+        self.prepare_ws(filter.ws1);
+        let mut size_hint = self.handle(ctx, &filter.nodes, buf, AstLevel::Nested)?;
+        self.flush_ws(filter.ws2);
+
+        let WriteParts {
+            size_hint: write_size_hint,
+            buffers,
+        } = self.prepare_format(buf.indent + 1)?;
+        size_hint += match buffers {
+            None => return Ok(0),
+            Some((buf_format, None)) => {
+                buf.writeln(&format!("let {var_name} = {:#?};", &buf_format.buf))?;
+                write_size_hint
+            }
+            Some((buf_format, Some(buf_expr))) => {
+                buf.writeln(&format!(
+                    "let {var_name} = format!({:#?}, {});",
+                    &buf_format.buf,
+                    buf_expr.buf.trim()
+                ))?;
+                write_size_hint
+            }
+        };
+
+        mem::drop(mem::replace(&mut self.buf_writable, current_buf));
+
+        let mut filter_buf = Buffer::new(buf.indent);
+        let mut args = filter.args.clone();
+        args.insert(0, Expr::Generated(var_name.to_string()));
+
+        let wrap = self.visit_filter(&mut filter_buf, filter.filter_name, &args)?;
+
+        self.buf_writable
+            .push(Writable::Generated(filter_buf.buf, wrap));
+        self.prepare_ws(filter.ws2);
+
+        Ok(size_hint)
+    }
+
     fn handle_include(
         &mut self,
         ctx: &'a Context<'_>,
@@ -1010,8 +1081,35 @@ impl<'a> Generator<'a> {
 
     // Write expression buffer and empty
     fn write_buf_writable(&mut self, buf: &mut Buffer) -> Result<usize, CompileError> {
+        let WriteParts { size_hint, buffers } = self.prepare_format(buf.indent)?;
+        match buffers {
+            None => Ok(size_hint),
+            Some((buf_format, None)) => {
+                buf.writeln(&format!("writer.write_str({:#?})?;", &buf_format.buf))?;
+                Ok(size_hint)
+            }
+            Some((buf_format, Some(buf_expr))) => {
+                buf.writeln("::std::write!(")?;
+                buf.indent();
+                buf.writeln("writer,")?;
+                buf.writeln(&format!("{:#?},", &buf_format.buf))?;
+                buf.writeln(buf_expr.buf.trim())?;
+                buf.dedent()?;
+                buf.writeln(")?;")?;
+                Ok(size_hint)
+            }
+        }
+    }
+
+    /// This is the common code to generate an expression. It is used for filter blocks and for
+    /// expressions more generally. It stores the size it represents and the buffers. Take a look
+    /// at `WriteParts` for more details.
+    fn prepare_format(&mut self, indent: u8) -> Result<WriteParts, CompileError> {
         if self.buf_writable.is_empty() {
-            return Ok(0);
+            return Ok(WriteParts {
+                size_hint: 0,
+                buffers: None,
+            });
         }
 
         if self
@@ -1025,14 +1123,19 @@ impl<'a> Generator<'a> {
                     buf_lit.write(s);
                 };
             }
-            buf.writeln(&format!("writer.write_str({:#?})?;", &buf_lit.buf))?;
-            return Ok(buf_lit.buf.len());
+            let size_hint = buf_lit.buf.len();
+            return Ok(WriteParts {
+                size_hint,
+                buffers: Some((buf_lit, None)),
+            });
         }
+
+        let mut expr_cache = HashMap::with_capacity(self.buf_writable.len());
 
         let mut size_hint = 0;
         let mut buf_format = Buffer::new(0);
-        let mut buf_expr = Buffer::new(buf.indent + 1);
-        let mut expr_cache = HashMap::with_capacity(self.buf_writable.len());
+        let mut buf_expr = Buffer::new(indent + 1);
+
         for s in mem::take(&mut self.buf_writable) {
             match s {
                 Writable::Lit(s) => {
@@ -1052,17 +1155,22 @@ impl<'a> Generator<'a> {
                         &mut expr_cache,
                     )?;
                 }
+                Writable::Generated(s, wrapped) => {
+                    size_hint += self.named_expression(
+                        &mut buf_expr,
+                        &mut buf_format,
+                        s,
+                        wrapped,
+                        false,
+                        &mut expr_cache,
+                    )?;
+                }
             }
         }
-
-        buf.writeln("::std::write!(")?;
-        buf.indent();
-        buf.writeln("writer,")?;
-        buf.writeln(&format!("{:#?},", &buf_format.buf))?;
-        buf.writeln(buf_expr.buf.trim())?;
-        buf.dedent()?;
-        buf.writeln(")?;")?;
-        Ok(size_hint)
+        Ok(WriteParts {
+            size_hint,
+            buffers: Some((buf_format, Some(buf_expr))),
+        })
     }
 
     fn named_expression(
@@ -1176,6 +1284,7 @@ impl<'a> Generator<'a> {
             Expr::Try(ref expr) => self.visit_try(buf, expr.as_ref())?,
             Expr::Tuple(ref exprs) => self.visit_tuple(buf, exprs)?,
             Expr::NamedArgument(_, ref expr) => self.visit_named_argument(buf, expr)?,
+            Expr::Generated(ref s) => self.visit_generated(buf, s),
         })
     }
 
@@ -1638,6 +1747,11 @@ impl<'a> Generator<'a> {
         DisplayWrap::Unwrapped
     }
 
+    fn visit_generated(&mut self, buf: &mut Buffer, s: &str) -> DisplayWrap {
+        buf.write(s);
+        DisplayWrap::Unwrapped
+    }
+
     fn visit_bool_lit(&mut self, buf: &mut Buffer, s: &str) -> DisplayWrap {
         buf.write(s);
         DisplayWrap::Unwrapped
@@ -2026,6 +2140,7 @@ pub(crate) fn is_cacheable(expr: &Expr<'_>) -> bool {
         Expr::Call(_, _) => false,
         Expr::RustMacro(_, _) => false,
         Expr::Try(_) => false,
+        Expr::Generated(_) => true,
     }
 }
 
@@ -2045,7 +2160,7 @@ enum AstLevel {
     Nested,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum DisplayWrap {
     Wrapped,
     Unwrapped,
@@ -2055,6 +2170,7 @@ enum DisplayWrap {
 enum Writable<'a> {
     Lit(&'a str),
     Expr(&'a Expr<'a>),
+    Generated(String, DisplayWrap),
 }
 
 // Identifiers to be replaced with raw identifiers, so as to avoid

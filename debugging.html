@@ -88,9 +88,11 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="askama.html"><strong aria-hidden="true">1.</strong> Askama</a></li><li class="chapter-item expanded "><a href="getting_started.html"><strong aria-hidden="true">2.</strong> Getting started</a></li><li class="chapter-item expanded "><a href="creating_templates.html"><strong aria-hidden="true">3.</strong> Creating templates</a></li><li class="chapter-item expanded "><a href="debugging.html" class="active"><strong aria-hidden="true">4.</strong> Debugging</a></li><li class="chapter-item expanded "><a href="configuration.html"><strong aria-hidden="true">5.</strong> Configuration</a></li><li class="chapter-item expanded "><a href="template_syntax.html"><strong aria-hidden="true">6.</strong> Template syntax</a></li><li class="chapter-item expanded "><a href="filters.html"><strong aria-hidden="true">7.</strong> Filters</a></li><li class="chapter-item expanded "><a href="integrations.html"><strong aria-hidden="true">8.</strong> Integrations</a></li><li class="chapter-item expanded "><a href="performance.html"><strong aria-hidden="true">9.</strong> Performance</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="askama.html"><strong aria-hidden="true">1.</strong> Askama</a></li><li class="chapter-item expanded "><a href="getting_started.html"><strong aria-hidden="true">2.</strong> Getting started</a></li><li class="chapter-item expanded "><a href="creating_templates.html"><strong aria-hidden="true">3.</strong> Creating templates</a></li><li class="chapter-item expanded "><a href="debugging.html" class="active"><strong aria-hidden="true">4.</strong> Debugging</a></li><li class="chapter-item expanded "><a href="configuration.html"><strong aria-hidden="true">5.</strong> Configuration</a></li><li class="chapter-item expanded "><a href="template_syntax.html"><strong aria-hidden="true">6.</strong> Template syntax</a></li><li class="chapter-item expanded "><a href="filters.html"><strong aria-hidden="true">7.</strong> Filters</a></li><li class="chapter-item expanded "><a href="integrations.html"><strong aria-hidden="true">8.</strong> Integrations</a></li><li class="chapter-item expanded "><a href="performance.html"><strong aria-hidden="true">9.</strong> Performance</a></li><li class="chapter-item expanded "><a href="template_expansion.html"><strong aria-hidden="true">10.</strong> Template expansion</a></li></ol>
             </div>
-            <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
         </nav>
 
         <!-- Track and set sidebar scroll position -->
@@ -177,7 +179,7 @@ changing the <code>template</code> attribute item list for the template struct:<
 <pre><pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>#[derive(Template)]
-#[template(path = &quot;hello.html&quot;, print = &quot;all&quot;)]
+#[template(path = "hello.html", print = "all")]
 struct HelloTemplate&lt;'a&gt; { ... }
 <span class="boring">}</span></code></pre></pre>
 <p>The <code>print</code> key can take one of four values:</p>
@@ -189,8 +191,8 @@ struct HelloTemplate&lt;'a&gt; { ... }
 </ul>
 <p>The resulting output will be printed to <code>stderr</code> during the compilation process.</p>
 <p>The parse tree looks like this for the example template:</p>
-<pre><code>[Lit(&quot;&quot;, &quot;Hello,&quot;, &quot; &quot;), Expr(WS(false, false), Var(&quot;name&quot;)),
-Lit(&quot;&quot;, &quot;!&quot;, &quot;\n&quot;)]
+<pre><code>[Lit("", "Hello,", " "), Expr(WS(false, false), Var("name")),
+Lit("", "!", "\n")]
 </code></pre>
 <p>The generated code looks like this:</p>
 <pre><pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
@@ -199,13 +201,13 @@ Lit(&quot;&quot;, &quot;!&quot;, &quot;\n&quot;)]
     fn render_into(&amp;self, writer: &amp;mut ::std::fmt::Write) -&gt; ::askama::Result&lt;()&gt; {
         write!(
             writer,
-            &quot;Hello, {expr0}!&quot;,
+            "Hello, {expr0}!",
             expr0 = &amp;::askama::MarkupDisplay::from(&amp;self.name),
         )?;
         Ok(())
     }
     fn extension() -&gt; Option&lt;&amp;'static str&gt; {
-        Some(&quot;html&quot;)
+        Some("html")
     }
 }
 impl &lt; 'a &gt; ::std::fmt::Display for HelloTemplate&lt; 'a &gt; {

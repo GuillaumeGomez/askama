@@ -185,35 +185,38 @@ is passed to the next.</p>
 <pre><code>{{ "HELLO"|lower }}
 </code></pre>
 <p>Askama has a collection of built-in filters, documented below, but can also include custom filters.
-Additionally, the <code>json</code> and <code>yaml</code> filters are included in the built-in filters,
-but are disabled by default. Enable them with Cargo features (see below for more information).</p>
+Additionally, the <code>json</code> filter is included in the built-in filters, but is disabled by default.
+Enable it with Cargo features (see below for more information).</p>
 <p><strong>Table of contents</strong></p>
 <ul>
 <li>
-<p><strong><a href="#built-in-filters">Built-in filters</a>:</strong><br />
-<a href="#abs"><code>abs</code></a>,
-<a href="#as_ref"><code>as_ref</code></a>,
-<a href="#capitalize"><code>capitalize</code></a>,
-<a href="#center"><code>center</code></a>,
-<a href="#escape--e"><code>escape|e</code></a>,
-<a href="#filesizeformat"><code>filesizeformat</code></a>,
-<a href="#format"><code>format</code></a>,
-<a href="#indent"><code>indent</code></a>,
-<a href="#join"><code>join</code></a>,
-<a href="#linebreaks"><code>linebreaks</code></a>,
-<a href="#linebreaksbr"><code>linebreaksbr</code></a>,
-<a href="#lower--lowercase"><code>lower|lowercase</code></a>,
-<a href="#safe"><code>safe</code></a>,
-<a href="#trim"><code>trim</code></a>,
-<a href="#truncate"><code>truncate</code></a>,
-<a href="#upper--uppercase"><code>upper|uppercase</code></a>,
-<a href="#wordcount"><code>wordcount</code></a></p>
+<p><strong><a href="#built-in-filters">Built-in filters</a>:</strong></p>
+<ul>
+<li><a href="#abs"><code>abs</code></a></li>
+<li><a href="#as_ref"><code>as_ref</code></a></li>
+<li><a href="#capitalize"><code>capitalize</code></a></li>
+<li><a href="#center"><code>center</code></a></li>
+<li><a href="#deref"><code>deref</code></a></li>
+<li><a href="#escape--e"><code>escape|e</code></a></li>
+<li><a href="#filesizeformat"><code>filesizeformat</code></a></li>
+<li><a href="#fmt"><code>fmt</code></a></li>
+<li><a href="#format"><code>format</code></a></li>
+<li><a href="#indent"><code>indent</code></a></li>
+<li><a href="#join"><code>join</code></a></li>
+<li><a href="#linebreaks"><code>linebreaks</code></a></li>
+<li><a href="#linebreaksbr"><code>linebreaksbr</code></a></li>
+<li><a href="#lower--lowercase"><code>lower|lowercase</code></a></li>
+<li><a href="#safe"><code>safe</code></a></li>
+<li><a href="#title"><code>title</code></a></li>
+<li><a href="#trim"><code>trim</code></a></li>
+<li><a href="#truncate"><code>truncate</code></a></li>
+<li><a href="#upper--uppercase"><code>upper|uppercase</code></a></li>
+<li><a href="#wordcount"><code>wordcount</code></a></li>
+</ul>
 </li>
 <li>
 <p><strong><a href="#optional--feature-gated-filters">Optional / feature gated filters</a>:</strong><br />
-<a href="#json--tojson"><code>json|tojson</code></a>,
-<a href="#markdown"><code>markdown</code></a>,
-<a href="#yaml"><code>yaml</code></a></p>
+<a href="#json--tojson"><code>json|tojson</code></a>,</p>
 </li>
 <li>
 <p><strong><a href="#custom-filters">Custom filters</a></strong></p>
@@ -250,6 +253,16 @@ but are disabled by default. Enable them with Cargo features (see below for more
 <p>Output:</p>
 <pre><code>-  a  -
 </code></pre>
+<h3 id="deref"><a class="header" href="#deref">deref</a></h3>
+<p>Dereferences the given argument.</p>
+<pre><code>{% let s = String::from("a")|as_ref %}
+{% if s|deref == String::from("b") %}
+{% endif %}
+</code></pre>
+<p>will become:</p>
+<pre><code>let s = &amp;String::from("a");
+if *s == String::from("b") {}
+</code></pre>
 <h3 id="escape--e"><a class="header" href="#escape--e">escape | e</a></h3>
 <p>Escapes HTML characters in strings:</p>
 <pre><code>{{ "Escape &lt;&gt;&amp;"|e }}
@@ -281,10 +294,22 @@ Escape &amp;lt;&amp;gt;&amp;amp;
 <p>Output:</p>
 <pre><code>1 KB
 </code></pre>
+<h3 id="fmt"><a class="header" href="#fmt">fmt</a></h3>
+<p>Formats arguments according to the specified format</p>
+<p>The <em>second</em> argument to this filter must be a string literal (as in normal
+Rust). The two arguments are passed through to <a href="https://doc.rust-lang.org/stable/std/macro.format.html"><code>format!()</code></a> by
+the Askama code generator, but the order is swapped to support filter
+composition.</p>
+<pre><code class="language-text">{{ value|fmt("{:?}") }}
+</code></pre>
+<p>As an example, this allows filters to be composed like the following.
+Which is not possible using the <code>format</code> filter.</p>
+<pre><code class="language-text">{{ value|capitalize|fmt("{:?}") }}
+</code></pre>
 <h3 id="format"><a class="header" href="#format">format</a></h3>
 <p>Formats arguments according to the specified format.</p>
 <p>The first argument to this filter must be a string literal (as in normal Rust).</p>
-<p>All arguments are passed through to the <code>format!()</code> macro by the Askama code generator.</p>
+<p>All arguments are passed through to <a href="https://doc.rust-lang.org/stable/std/macro.format.html"><code>format!()</code></a> by the Askama code generator.</p>
 <pre><code>{{ "{:?}"|format(var) }}
 </code></pre>
 <h3 id="indent"><a class="header" href="#indent">indent</a></h3>
@@ -343,6 +368,14 @@ Escape &amp;lt;&amp;gt;&amp;amp;
 <p>Output:</p>
 <pre><code>&lt;p&gt;I'm Safe&lt;/p&gt;
 </code></pre>
+<h3 id="title"><a class="header" href="#title">title</a></h3>
+<p>Return a title cased version of the value. Words will start with uppercase letters, all
+remaining characters are lowercase.</p>
+<pre><code>{{ "hello WORLD"|title }}
+</code></pre>
+<p>Output:</p>
+<pre><code>Hello World
+</code></pre>
 <h3 id="trim"><a class="header" href="#trim">trim</a></h3>
 <p>Strip leading and trailing whitespace.</p>
 <pre><code>{{ " hello "|trim }}
@@ -397,24 +430,6 @@ Bad:  &lt;script&gt;var data = "{{data|json|safe}}";&lt;/script&gt;
 
 Ugly: &lt;script&gt;var data = "{{data|json}}";&lt;/script&gt;
 Ugly: &lt;script&gt;var data = '{{data|json|safe}}';&lt;/script&gt;
-</code></pre>
-<h3 id="markdown"><a class="header" href="#markdown"><code>markdown</code></a></h3>
-<p>Enabling the <code>markdown</code> feature will enable the use of the <code>markdown</code> filter.
-This will render a value using a <a href="https://docs.rs/comrak/0.14.*/comrak/">GitHub flavored CommonMark</a> syntax.
-By default the extensions “autolink”, “strikethrough”, “tagfilter”, and “table” are enabled.
-Any raw HTML gets escaped.</p>
-<pre><code class="language-jinja">{{ "**&lt;i&gt;Hello&lt;/i&gt;, world!**"|markdown }}
-</code></pre>
-<p>Output:</p>
-<pre><code class="language-html">&lt;p&gt;&lt;strong&gt;&amp;lt;i&amp;gt;Hello&amp;lt;/i&amp;gt;, world!&lt;/strong&gt;&lt;/p&gt;
-</code></pre>
-<p>You can change the default settings by supplying <a href="https://docs.rs/comrak/0.12.*/comrak/struct.ComrakRenderOptions.html">custom options</a>, e.g. to enable unsafe raw HTML.
-You can find a usage example in our <a href="https://github.com/djc/askama/blob/5748c357d435b24848d1571df010d777859fede9/testing/tests/markdown.rs#L36-L75">unit tests</a>.</p>
-<h3 id="yaml"><a class="header" href="#yaml"><code>yaml</code></a></h3>
-<p>Enabling the <code>serde-yaml</code> feature will enable the use of the <code>yaml</code> filter.
-This will output formatted YAML for any value that implements the required
-<a href="https://docs.rs/serde/1.*/serde/trait.Serialize.html"><code>Serialize</code></a> trait.</p>
-<pre><code class="language-jinja">{{ foo|yaml }}
 </code></pre>
 <h2 id="custom-filters"><a class="header" href="#custom-filters">Custom Filters</a></h2>
 <p>To define your own filters, simply have a module named <code>filters</code> in scope of the context deriving a <code>Template</code> impl

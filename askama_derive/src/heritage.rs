@@ -51,10 +51,11 @@ pub(crate) struct Context<'a> {
     pub(crate) path: Option<&'a Path>,
     pub(crate) parsed: &'a Parsed,
     pub(crate) literal: Option<LiteralOrSpan>,
+    pub(crate) template_span: proc_macro2::Span,
 }
 
 impl<'a> Context<'a> {
-    pub(crate) fn empty(parsed: &Parsed) -> Context<'_> {
+    pub(crate) fn empty(parsed: &Parsed, template_span: proc_macro2::Span) -> Context<'_> {
         Context {
             nodes: &[],
             extends: None,
@@ -64,6 +65,7 @@ impl<'a> Context<'a> {
             path: None,
             parsed,
             literal: None,
+            template_span,
         }
     }
 
@@ -72,6 +74,7 @@ impl<'a> Context<'a> {
         path: &'a Path,
         parsed: &'a Parsed,
         literal: Option<LiteralOrSpan>,
+        template_span: proc_macro2::Span,
     ) -> Result<Self, CompileError> {
         let mut extends = None;
         let mut blocks = HashMap::default();
@@ -143,11 +146,22 @@ impl<'a> Context<'a> {
             parsed,
             path: Some(path),
             literal,
+            template_span,
         })
+    }
+
+    pub(crate) fn span(&self) -> Option<proc_macro2::Span> {
+        self.literal.as_ref().and_then(|lit| lit.span())
     }
 
     pub(crate) fn generate_error(&self, msg: impl fmt::Display, node: Span<'_>) -> CompileError {
         let file_info = self.file_info_of(node);
+        // FIXME: Should `new_with_span` not expect an `Option` but just a `Span`?
+        CompileError::new_with_span(msg, file_info, Some(self.span_for_node(node)))
+    }
+
+    pub(crate) fn span_for_node(&self, node: Span<'_>) -> proc_macro2::Span {
+        let call_site_span = proc_macro2::Span::call_site();
         if let Some(LiteralOrSpan::Literal(ref literal)) = self.literal
             && let source = self.parsed.source()
             && let Some(mut offset) = node.offset_from(source)
@@ -155,13 +169,12 @@ impl<'a> Context<'a> {
             && let Some(extra) = original_code.find('"')
         {
             offset += extra + 1;
-            CompileError::new_with_span(
-                msg,
-                file_info,
-                literal.subspan(offset..offset + node.len()),
-            )
+            literal
+                .subspan(offset..offset + node.len())
+                .map(|span| span.resolved_at(call_site_span))
+                .unwrap_or(call_site_span)
         } else {
-            CompileError::new(msg, file_info)
+            call_site_span
         }
     }
 

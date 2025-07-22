@@ -18,15 +18,19 @@ use crate::{CompileError, FileInfo, MsgValidEscapers};
 #[derive(Clone)]
 pub(crate) enum LiteralOrSpan {
     Literal(proc_macro2::Literal),
+    #[allow(dead_code)]
+    Path(proc_macro2::Literal),
     #[cfg_attr(not(feature = "code-in-doc"), allow(dead_code))]
     Span(Span),
 }
 
 impl LiteralOrSpan {
-    pub(crate) fn span(&self) -> Span {
+    pub(crate) fn span(&self) -> Option<Span> {
         match self {
-            Self::Literal(lit) => lit.span(),
-            Self::Span(span) => *span,
+            Self::Literal(lit) => Some(lit.span()),
+            // FIXME: How do we get the span of the included file?
+            Self::Path(_) => None,
+            Self::Span(span) => Some(*span),
         }
     }
 }
@@ -465,7 +469,7 @@ impl TemplateArgs {
                 #[cfg(feature = "external-sources")]
                 Some(PartialTemplateArgsSource::Path(s)) => (
                     Source::Path(s.value().into()),
-                    Some(LiteralOrSpan::Literal(s.token())),
+                    Some(LiteralOrSpan::Path(s.token())),
                 ),
                 Some(PartialTemplateArgsSource::Source(s)) => (
                     Source::Source(s.value().into()),

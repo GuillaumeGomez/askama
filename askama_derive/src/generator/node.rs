@@ -2,12 +2,14 @@ use std::borrow::Cow;
 use std::collections::hash_map::{Entry, HashMap};
 use std::fmt::Debug;
 use std::mem;
+use std::str::FromStr;
 
 use parser::expr::BinOp;
 use parser::node::{
     Call, Comment, Cond, CondTest, FilterBlock, If, Include, Let, Lit, Loop, Match, Whitespace, Ws,
 };
 use parser::{Expr, Node, Span, Target, WithSpan};
+use proc_macro2::TokenStream;
 
 use super::{
     DisplayWrap, FILTER_SOURCE, Generator, LocalMeta, MapChain, compile_time_escape, is_copyable,
@@ -15,7 +17,7 @@ use super::{
 };
 use crate::generator::{LocalCallerMeta, Writable, helpers};
 use crate::heritage::{Context, Heritage};
-use crate::integration::Buffer;
+use crate::integration::{Buffer, string_escape};
 use crate::{CompileError, FileInfo, fmt_left, fmt_right};
 
 impl<'a> Generator<'a, '_> {
@@ -159,12 +161,12 @@ impl<'a> Generator<'a, '_> {
                 Node::Break(ref ws) => {
                     self.handle_ws(**ws);
                     self.write_buf_writable(ctx, buf)?;
-                    buf.write("break;");
+                    buf.write("break;", None);
                 }
                 Node::Continue(ref ws) => {
                     self.handle_ws(**ws);
                     self.write_buf_writable(ctx, buf)?;
-                    buf.write("continue;");
+                    buf.write("continue;", None);
                 }
             }
         }
@@ -373,23 +375,24 @@ impl<'a> Generator<'a, '_> {
 
                 if let Some(CondTest { target, expr, .. }) = &cond.cond {
                     let expr = cond_info.cond_expr.as_ref().unwrap_or(expr);
+                    let span = ctx.span_for_node(expr.span());
 
                     if pos == 0 {
                         if cond_info.generate_condition {
-                            buf.write("if ");
+                            buf.write("if", span);
                         }
                         // Otherwise it means it will be the only condition generated,
                         // so nothing to be added here.
                     } else if cond_info.generate_condition {
-                        buf.write("} else if ");
+                        buf.write("else if", span);
                     } else {
-                        buf.write("} else {");
+                        buf.write("else", span);
                         has_else = true;
                     }
 
                     if let Some(target) = target {
                         let mut expr_buf = Buffer::new();
-                        buf.write("let ");
+                        buf.write("let ", span);
                         // If this is a chain condition, then we need to declare the variable after the
                         // left expression has been handled but before the right expression is handled
                         // but this one should have access to the let-bound variable.
@@ -397,36 +400,36 @@ impl<'a> Generator<'a, '_> {
                             Expr::BinOp(v) if matches!(v.op, "||" | "&&") => {
                                 let display_wrap =
                                     this.visit_expr_first(ctx, &mut expr_buf, &v.lhs)?;
-                                this.visit_target(buf, true, true, target);
+                                this.visit_target(ctx, buf, true, true, target);
                                 this.visit_expr_not_first(
                                     ctx,
                                     &mut expr_buf,
                                     &v.lhs,
                                     display_wrap,
                                 )?;
-                                buf.write(format_args!("= &{expr_buf} {} ", v.op));
+                                buf.write(format_args!("= &{expr_buf} {} ", v.op), span);
                                 this.visit_condition(ctx, buf, &v.rhs)?;
                             }
                             _ => {
                                 let display_wrap =
                                     this.visit_expr_first(ctx, &mut expr_buf, expr)?;
-                                this.visit_target(buf, true, true, target);
+                                this.visit_target(ctx, buf, true, true, target);
                                 this.visit_expr_not_first(ctx, &mut expr_buf, expr, display_wrap)?;
-                                buf.write(format_args!("= &{expr_buf}"));
+                                buf.write(format_args!("= &{expr_buf}"), span);
                             }
                         }
-                        buf.write("{");
                     } else if cond_info.generate_condition {
                         this.visit_condition(ctx, buf, expr)?;
-                        buf.write('{');
                     }
                 } else if pos != 0 {
-                    buf.write("} else {");
+                    // FIXME: Should have a span.
+                    buf.write("else", None);
                     has_else = true;
                 }
 
+                let mut block_buf = Buffer::new();
                 if cond_info.generate_content {
-                    arm_size += this.handle(ctx, &cond.nodes, buf, AstLevel::Nested)?;
+                    arm_size += this.handle(ctx, &cond.nodes, &mut block_buf, AstLevel::Nested)?;
                 }
                 arm_sizes.push(arm_size);
 
@@ -434,20 +437,26 @@ impl<'a> Generator<'a, '_> {
                     let cond = cond_info.cond;
 
                     this.handle_ws(cond.ws);
-                    flushed += this.write_buf_writable(ctx, buf)?;
+                    flushed += this.write_buf_writable(ctx, &mut block_buf)?;
                 } else {
                     if let Some(ws_after) = conds.ws_after {
                         this.handle_ws(ws_after);
                     }
                     this.handle_ws(if_.ws);
-                    flushed += this.write_buf_writable(ctx, buf)?;
+                    flushed += this.write_buf_writable(ctx, &mut block_buf)?;
                 }
+                let block_buf = block_buf.into_token_stream();
+                // FIXME Should have a span.
+                buf.write(
+                    quote::quote!(
+                        {
+                            #block_buf
+                        }
+                    ),
+                    None,
+                );
                 Ok(0)
             })?;
-        }
-
-        if conds.nb_conds > 0 {
-            buf.write('}');
         }
 
         if !has_else && !conds.conds.is_empty() {
@@ -475,41 +484,50 @@ impl<'a> Generator<'a, '_> {
         let mut arm_sizes = Vec::new();
 
         let expr_code = self.visit_expr_root(ctx, expr)?;
-        buf.write(format_args!("match &{expr_code} {{"));
+        let span = ctx.span_for_node(expr.span());
 
         let mut arm_size = 0;
         let mut iter = arms.iter().enumerate().peekable();
+        let mut arms = Buffer::new();
         while let Some((i, arm)) = iter.next() {
             if i == 0 {
                 self.handle_ws(arm.ws);
             }
 
+            // FIXME: When `Target` is wrapped in `WithSpan`, update the spans.
             self.push_locals(|this| {
+                let mut targets_buf = Buffer::new();
                 for (index, target) in arm.target.iter().enumerate() {
                     if index != 0 {
-                        buf.write('|');
+                        targets_buf.write('|', span);
                     }
-                    this.visit_target(buf, true, true, target);
+                    this.visit_target(ctx, &mut targets_buf, true, true, target);
                 }
-                buf.write(" => {");
 
-                arm_size = this.handle(ctx, &arm.nodes, buf, AstLevel::Nested)?;
+                let mut arm_buf = Buffer::new();
+                arm_size = this.handle(ctx, &arm.nodes, &mut arm_buf, AstLevel::Nested)?;
 
                 if let Some((_, arm)) = iter.peek() {
                     this.handle_ws(arm.ws);
-                    arm_sizes.push(arm_size + this.write_buf_writable(ctx, buf)?);
-
-                    buf.write('}');
+                    arm_sizes.push(arm_size + this.write_buf_writable(ctx, &mut arm_buf)?);
                 } else {
                     this.handle_ws(ws2);
-                    arm_sizes.push(arm_size + this.write_buf_writable(ctx, buf)?);
-                    buf.write('}');
+                    arm_sizes.push(arm_size + this.write_buf_writable(ctx, &mut arm_buf)?);
                 }
+                let targets_buf = targets_buf.into_token_stream();
+                let arm_buf = arm_buf.into_token_stream();
+                arms.write(spanned!(span=> #targets_buf => { #arm_buf }), None);
                 Ok(0)
             })?;
         }
 
-        buf.write('}');
+        let arms = arms.into_token_stream();
+        buf.write(
+            spanned!(span=> match & #expr_code {
+                #arms
+            }),
+            None,
+        );
 
         Ok(flushed + median(&mut arm_sizes))
     }
@@ -521,63 +539,80 @@ impl<'a> Generator<'a, '_> {
         loop_block: &'a WithSpan<'a, Loop<'_>>,
     ) -> Result<usize, CompileError> {
         self.handle_ws(loop_block.ws1);
+        let span = ctx.span_for_node(loop_block.span());
         self.push_locals(|this| {
             let has_else_nodes = !loop_block.else_nodes.is_empty();
 
             let flushed = this.write_buf_writable(ctx, buf)?;
-            buf.write('{');
+            let mut loop_buf = Buffer::new();
             if has_else_nodes {
-                buf.write("let mut __askama_did_loop = false;");
+                loop_buf.write("let mut __askama_did_loop = false;", span);
             }
 
-            buf.write("let __askama_iter =");
-            this.visit_loop_iter(ctx, buf, &loop_block.iter)?;
-            buf.write(';');
+            loop_buf.write("let __askama_iter =", span);
+            this.visit_loop_iter(ctx, &mut loop_buf, &loop_block.iter)?;
+            loop_buf.write(';', span);
             if let Some(cond) = &loop_block.cond {
                 this.push_locals(|this| {
-                    buf.write("let __askama_iter = __askama_iter.filter(|");
-                    this.visit_target(buf, true, true, &loop_block.var);
-                    buf.write("| -> askama::helpers::core::primitive::bool {");
-                    this.visit_expr(ctx, buf, cond)?;
-                    buf.write("});");
+                    let mut target_buf = Buffer::new();
+                    this.visit_target(ctx, &mut target_buf, true, true, &loop_block.var);
+                    let target_buf = target_buf.into_token_stream();
+                    let mut expr_buf = Buffer::new();
+                    this.visit_expr(ctx, &mut expr_buf, cond)?;
+                    let expr_buf = expr_buf.into_token_stream();
+                    loop_buf.write(spanned!(span=>
+                        let __askama_iter = __askama_iter.filter(|#target_buf| -> askama::helpers::core::primitive::bool {
+                            #expr_buf
+                        });
+                    ), None);
                     Ok(0)
                 })?;
             }
 
             let size_hint1 = this.push_locals(|this| {
-                buf.write("for (");
-                this.visit_target(buf, true, true, &loop_block.var);
-                buf.write(
-                    ", __askama_item) in askama::helpers::TemplateLoop::new(__askama_iter) {",
-                );
+                let mut target_buf = Buffer::new();
+                this.visit_target(ctx, &mut target_buf, true, true, &loop_block.var);
+                let target_buf = target_buf.into_token_stream();
 
+                let mut loop_body_buf = Buffer::new();
                 if has_else_nodes {
-                    buf.write("__askama_did_loop = true;");
+                    loop_body_buf.write("__askama_did_loop = true;", span);
                 }
-                let mut size_hint1 = this.handle(ctx, &loop_block.body, buf, AstLevel::Nested)?;
+                let mut size_hint1 = this.handle(ctx, &loop_block.body, &mut loop_body_buf, AstLevel::Nested)?;
                 this.handle_ws(loop_block.ws2);
-                size_hint1 += this.write_buf_writable(ctx, buf)?;
+                size_hint1 += this.write_buf_writable(ctx, &mut loop_body_buf)?;
+                let loop_body_buf = loop_body_buf.into_token_stream();
+                loop_buf.write(spanned!(span=>
+                    for (#target_buf, __askama_item) in askama::helpers::TemplateLoop::new(__askama_iter) {
+                        #loop_body_buf
+                    }
+                ), None);
                 Ok(size_hint1)
             })?;
-            buf.write('}');
 
             let size_hint2;
             if has_else_nodes {
-                buf.write("if !__askama_did_loop {");
+                let mut cond_buf = Buffer::new();
                 size_hint2 = this.push_locals(|this| {
                     let mut size_hint =
-                        this.handle(ctx, &loop_block.else_nodes, buf, AstLevel::Nested)?;
+                        this.handle(ctx, &loop_block.else_nodes, &mut cond_buf, AstLevel::Nested)?;
                     this.handle_ws(loop_block.ws3);
-                    size_hint += this.write_buf_writable(ctx, buf)?;
+                    size_hint += this.write_buf_writable(ctx, &mut cond_buf)?;
                     Ok(size_hint)
                 })?;
-                buf.write('}');
+                let cond_buf = cond_buf.into_token_stream();
+                loop_buf.write(spanned!(span=> if !__askama_did_loop {
+                    #cond_buf
+                }), None);
             } else {
                 this.handle_ws(loop_block.ws3);
-                size_hint2 = this.write_buf_writable(ctx, buf)?;
+                size_hint2 = this.write_buf_writable(ctx, &mut loop_buf)?;
             }
 
-            buf.write('}');
+            let loop_buf = loop_buf.into_token_stream();
+            buf.write(spanned!(span=> {
+                #loop_buf
+            }), None);
             Ok(flushed + ((size_hint1 * 3) + size_hint2) / 2)
         })
     }
@@ -643,24 +678,27 @@ impl<'a> Generator<'a, '_> {
         self.flush_ws(filter.ws1);
         self.is_in_filter_block += 1;
         self.write_buf_writable(ctx, buf)?;
-        buf.write('{');
+        let span = ctx.span_for_node(filter.span());
 
         // build `FmtCell` that contains the inner block
-        buf.write(format_args!(
-            "let {FILTER_SOURCE} = askama::helpers::FmtCell::new(\
-                |__askama_writer: &mut askama::helpers::core::fmt::Formatter<'_>| -> askama::Result<()> {{"
-        ));
+        let mut filter_def_buf = Buffer::new();
         let size_hint = self.push_locals(|this| {
             this.prepare_ws(filter.ws1);
-            let size_hint = this.handle(ctx, &filter.nodes, buf, AstLevel::Nested)?;
+            let size_hint =
+                this.handle(ctx, &filter.nodes, &mut filter_def_buf, AstLevel::Nested)?;
             this.flush_ws(filter.ws2);
-            this.write_buf_writable(ctx, buf)?;
+            this.write_buf_writable(ctx, &mut filter_def_buf)?;
             Ok(size_hint)
         })?;
-        buf.write(
-            "\
-                askama::Result::Ok(())\
-            });",
+        let filter_def_buf = filter_def_buf.into_token_stream();
+        let filter_source = quote::format_ident!("{FILTER_SOURCE}");
+        let filter_def_buf = spanned!(span=>
+            let #filter_source = askama::helpers::FmtCell::new(
+                |__askama_writer: &mut askama::helpers::core::fmt::Formatter<'_>| -> askama::Result<()> {
+                    #filter_def_buf
+                    askama::Result::Ok(())
+                }
+            );
         );
 
         // display the `FmtCell`
@@ -672,20 +710,32 @@ impl<'a> Generator<'a, '_> {
             &filter.filters.arguments,
             filter.span(),
         )?;
+        let filter_buf = filter_buf.into_token_stream();
         let filter_buf = match display_wrap {
-            DisplayWrap::Wrapped => fmt_left!("{filter_buf}"),
-            DisplayWrap::Unwrapped => fmt_right!(
-                "(&&askama::filters::AutoEscaper::new(&({filter_buf}), {})).askama_auto_escape()?",
-                self.input.escaper,
-            ),
+            DisplayWrap::Wrapped => filter_buf,
+            DisplayWrap::Unwrapped => {
+                let escaper = TokenStream::from_str(self.input.escaper).unwrap();
+                spanned!(span=>
+                    (&&askama::filters::AutoEscaper::new(
+                        &(#filter_buf),
+                        #escaper)
+                    ).askama_auto_escape()?
+                )
+            }
         };
-        buf.write(format_args!(
-            "if askama::helpers::core::write!(__askama_writer, \"{{}}\", {filter_buf}).is_err() {{\
-                return {FILTER_SOURCE}.take_err();\
-            }}"
-        ));
+        let filter_source = quote::format_ident!("{FILTER_SOURCE}");
+        buf.write(
+            spanned!(span=>
+                {
+                    #filter_def_buf
+                    if askama::helpers::core::write!(__askama_writer, "{}", #filter_buf).is_err() {
+                        return {#filter_source}.take_err();
+                    }
+                }
+            ),
+            span,
+        );
 
-        buf.write('}');
         self.is_in_filter_block -= 1;
         self.prepare_ws(filter.ws2);
         Ok(size_hint)
@@ -806,15 +856,16 @@ impl<'a> Generator<'a, '_> {
         l: &'a WithSpan<'a, Let<'_>>,
     ) -> Result<(), CompileError> {
         self.handle_ws(l.ws);
+        let span = ctx.span_for_node(l.span());
 
         let Some(val) = &l.val else {
             self.write_buf_writable(ctx, buf)?;
-            buf.write("let ");
+            buf.write("let ", span);
             if l.is_mutable {
-                buf.write("mut ");
+                buf.write("mut ", span);
             }
-            self.visit_target(buf, false, true, &l.var);
-            buf.write(';');
+            self.visit_target(ctx, buf, false, true, &l.var);
+            buf.write(';', span);
             return Ok(());
         };
 
@@ -841,13 +892,13 @@ impl<'a> Generator<'a, '_> {
             || !matches!(l.var, Target::Name(_))
             || matches!(&l.var, Target::Name(name) if self.locals.get(name).is_none())
         {
-            buf.write("let ");
+            buf.write("let ", span);
             if l.is_mutable {
-                buf.write("mut ");
+                buf.write("mut ", span);
             }
         }
 
-        self.visit_target(buf, true, true, &l.var);
+        self.visit_target(ctx, buf, true, true, &l.var);
         // If it's not taking the ownership of a local variable or copyable, then we need to add
         // a reference.
         let (before, after) = if !matches!(**val, Expr::Try(..))
@@ -858,7 +909,7 @@ impl<'a> Generator<'a, '_> {
         } else {
             ("", "")
         };
-        buf.write(format_args!(" = {before}{expr_buf}{after};"));
+        buf.write(format_args!(" = {before}{expr_buf}{after};"), span);
         Ok(())
     }
 
@@ -1035,15 +1086,16 @@ impl<'a> Generator<'a, '_> {
                 // This is either `caller()` itself, or an alias created by  `{% set alias = caller %}`.
                 if let Some(LocalCallerMeta { call_ctx, def }) = caller_alias.cloned() {
                     self.handle_ws(ws);
+                    let span = ctx.span_for_node(s.span());
                     let size_hint = self.push_locals(|this| {
                         // Block-out the special caller() variable from this scope onward until it is defined by a
                         // new call-block again. This prohibits a caller from calling itself.
                         this.locals.insert("caller".into(), LocalMeta::Negative);
 
                         this.write_buf_writable(&call_ctx, buf)?;
-                        buf.write('{');
                         this.prepare_ws(def.ws1);
                         let mut value = Buffer::new();
+                        let mut variable_buf = Buffer::new();
                         check_num_args(
                             s,
                             &call_ctx,
@@ -1075,7 +1127,10 @@ impl<'a> Generator<'a, '_> {
                                                 associated_item,
                                             )?;
 
-                                            let associated_item = associated_item_buf.into_string();
+                                            // FIXME: Too many steps to get a string. Also,
+                                            // `visit_associated_item` returns stuff like `x.y`, how
+                                            // is this supposed to match a variable? O.o
+                                            let associated_item = associated_item_buf.to_string();
                                             let var = this
                                                 .locals
                                                 .resolve(&associated_item)
@@ -1095,13 +1150,20 @@ impl<'a> Generator<'a, '_> {
                                             } else {
                                                 ("", "")
                                             };
-                                            value.write(this.visit_expr_root(&call_ctx, expr)?);
+                                            value.write(
+                                                this.visit_expr_root(&call_ctx, expr)?,
+                                                span,
+                                            );
+                                            let value = value.to_string();
                                             // We need to normalize the arg to write it, thus we need to add it to
                                             // locals in the normalized manner
                                             let normalized_arg = normalize_identifier(arg);
-                                            buf.write(format_args!(
-                                                "let {normalized_arg} = {before}{value}{after};"
-                                            ));
+                                            variable_buf.write(
+                                                format_args!(
+                                                    "let {normalized_arg} = {before}{value}{after};"
+                                                ),
+                                                span,
+                                            );
                                             this.locals
                                                 .insert_with_default(Cow::Borrowed(normalized_arg));
                                         }
@@ -1115,12 +1177,21 @@ impl<'a> Generator<'a, '_> {
                                 }
                             }
                         }
+                        value.clear();
                         let mut size_hint =
-                            this.handle(&call_ctx, &def.nodes, buf, AstLevel::Nested)?;
+                            this.handle(&call_ctx, &def.nodes, &mut value, AstLevel::Nested)?;
 
                         this.flush_ws(def.ws2);
-                        size_hint += this.write_buf_writable(&call_ctx, buf)?;
-                        buf.write('}');
+                        size_hint += this.write_buf_writable(&call_ctx, &mut value)?;
+                        let value = value.into_token_stream();
+                        let variable_buf = variable_buf.into_token_stream();
+                        buf.write(
+                            spanned!(span=> {
+                                #variable_buf
+                                #value
+                            }),
+                            None,
+                        );
                         Ok(size_hint)
                     })?;
                     return Ok(size_hint);
@@ -1173,9 +1244,17 @@ impl<'a> Generator<'a, '_> {
         let items = mem::take(&mut self.buf_writable.buf);
         let mut it = items.iter().enumerate().peekable();
 
-        while let Some((_, Writable::Lit(s))) = it.peek() {
-            size_hint += buf.write_writer(s);
-            it.next();
+        if let Some((_, Writable::Lit(_))) = it.peek() {
+            let mut literal = Buffer::OPEN_STR.to_string();
+
+            while let Some((_, Writable::Lit(s))) = it.peek() {
+                string_escape(&mut literal, s);
+                it.next();
+            }
+            size_hint += literal.len() - Buffer::OPEN_STR.len();
+            literal.push_str(Buffer::CLOSE_STR);
+            // FIXME: Add spans to `Writable::Lit`.
+            buf.write(literal, None);
         }
         if it.peek().is_none() {
             return Ok(size_hint);
@@ -1187,7 +1266,7 @@ impl<'a> Generator<'a, '_> {
         // the `last_line` contains any sequence of trailing simple `writer.write_str()` calls
         let mut trailing_simple_lines = Vec::new();
 
-        buf.write("match (");
+        let mut matched_expr_buf = Buffer::new();
         while let Some((idx, s)) = it.next() {
             match s {
                 Writable::Lit(s) => {
@@ -1197,9 +1276,15 @@ impl<'a> Generator<'a, '_> {
                         it.next();
                     }
                     if it.peek().is_some() {
+                        // FIXME: Add spans to `Writable::Lit`.
+                        let mut literal = Buffer::OPEN_STR.to_string();
                         for s in items {
-                            size_hint += lines.write_writer(s);
+                            string_escape(&mut literal, s);
                         }
+                        size_hint += literal.len() - Buffer::OPEN_STR.len();
+                        literal.push_str(Buffer::CLOSE_STR);
+                        // FIXME: Add spans to `Writable::Lit`.
+                        lines.write(literal, None);
                     } else {
                         trailing_simple_lines = items;
                         break;
@@ -1209,46 +1294,67 @@ impl<'a> Generator<'a, '_> {
                     size_hint += 3;
 
                     let mut expr_buf = Buffer::new();
+                    let span = ctx.span_for_node(s.span());
                     let expr = match self.visit_expr(ctx, &mut expr_buf, s)? {
-                        DisplayWrap::Wrapped => expr_buf.into_string(),
-                        DisplayWrap::Unwrapped => format!(
-                            "(&&askama::filters::AutoEscaper::new(&({expr_buf}), {})).\
-                                askama_auto_escape()?",
-                            self.input.escaper,
-                        ),
+                        DisplayWrap::Wrapped => expr_buf.into_token_stream(),
+                        DisplayWrap::Unwrapped => {
+                            let escaper = TokenStream::from_str(self.input.escaper).unwrap();
+                            let expr_buf = expr_buf.into_token_stream();
+                            spanned!(span=>
+                                (&&askama::filters::AutoEscaper::new(&(#expr_buf), #escaper)).
+                                    askama_auto_escape()?,
+                            )
+                        }
                     };
                     let idx = if is_cacheable(s) {
-                        match expr_cache.entry(expr) {
+                        match expr_cache.entry(expr.to_string()) {
                             Entry::Occupied(e) => *e.get(),
                             Entry::Vacant(e) => {
-                                buf.write(format_args!("&({}),", e.key()));
-                                targets.write(format_args!("expr{idx},"));
+                                matched_expr_buf.write(format_args!("&({}),", e.key()), span);
+                                targets.write(format_args!("expr{idx},"), span);
                                 e.insert(idx);
                                 idx
                             }
                         }
                     } else {
-                        buf.write(format_args!("&({expr}),"));
-                        targets.write(format_args!("expr{idx}, "));
+                        matched_expr_buf.write(spanned!(span=> &(#expr),), None);
+                        targets.write(format_args!("expr{idx}, "), span);
                         idx
                     };
-                    lines.write(format_args!(
-                        "(&&&askama::filters::Writable(expr{idx})).\
+                    eprintln!("===> {span:?}");
+                    lines.write(
+                        format_args!(
+                            "(&&&askama::filters::Writable(expr{idx})).\
                              askama_write(__askama_writer, __askama_values)?;",
-                    ));
+                        ),
+                        span,
+                    );
                 }
             }
         }
-        buf.write(format_args!(
-            ") {{\
-                ({targets}) => {{\
-                    {lines}\
-                }}\
-            }}"
-        ));
+        let matched_expr_buf = matched_expr_buf.into_token_stream();
+        let targets = targets.into_token_stream();
+        let lines = lines.into_token_stream();
+        buf.write(
+            quote::quote!(
+                match (#matched_expr_buf) {
+                    (#targets) => {
+                        #lines
+                    }
+                }
+            ),
+            None,
+        );
 
-        for s in trailing_simple_lines {
-            size_hint += buf.write_writer(s);
+        if !trailing_simple_lines.is_empty() {
+            let mut literal = Buffer::OPEN_STR.to_string();
+            for s in trailing_simple_lines {
+                string_escape(&mut literal, s);
+            }
+            size_hint += literal.len() - Buffer::OPEN_STR.len();
+            literal.push_str(Buffer::CLOSE_STR);
+            // FIXME: Add span to `Writable::Lit`.
+            buf.write(literal, None);
         }
 
         Ok(size_hint)
@@ -1366,7 +1472,6 @@ struct Conds<'a> {
     conds: Vec<CondInfo<'a>>,
     ws_before: Option<Ws>,
     ws_after: Option<Ws>,
-    nb_conds: usize,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -1381,7 +1486,6 @@ impl<'a> Conds<'a> {
         let mut conds = Vec::with_capacity(i.branches.len());
         let mut ws_before = None;
         let mut ws_after = None;
-        let mut nb_conds = 0;
         let mut stop_loop = false;
 
         for cond in &i.branches {
@@ -1420,7 +1524,6 @@ impl<'a> Conds<'a> {
                             }
                             continue;
                         }
-                        nb_conds += 1;
                         conds.push(CondInfo {
                             cond,
                             cond_expr,
@@ -1434,9 +1537,6 @@ impl<'a> Conds<'a> {
                     // no need to generate an `else`.
                     EvaluatedResult::AlwaysTrue => {
                         let generate_condition = !only_contains_is_defined;
-                        if generate_condition {
-                            nb_conds += 1;
-                        }
                         conds.push(CondInfo {
                             cond,
                             cond_expr,
@@ -1447,7 +1547,6 @@ impl<'a> Conds<'a> {
                         stop_loop = true;
                     }
                     EvaluatedResult::Unknown => {
-                        nb_conds += 1;
                         conds.push(CondInfo {
                             cond,
                             cond_expr,
@@ -1458,9 +1557,6 @@ impl<'a> Conds<'a> {
                 }
             } else {
                 let generate_condition = !conds.is_empty();
-                if generate_condition {
-                    nb_conds += 1;
-                }
                 conds.push(CondInfo {
                     cond,
                     cond_expr: None,
@@ -1473,7 +1569,6 @@ impl<'a> Conds<'a> {
             conds,
             ws_before,
             ws_after,
-            nb_conds,
         }
     }
 }

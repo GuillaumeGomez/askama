@@ -528,6 +528,18 @@ const _: () = {
         }
     }
 
+    // FIXME: We currently add a comma in some cases, leading to `()` to be considered as a tuple.
+    impl<T: FastWritable> FastWritable for (T,) {
+        #[inline]
+        fn write_into<W: fmt::Write + ?Sized>(
+            &self,
+            dest: &mut W,
+            values: &dyn Values,
+        ) -> crate::Result<()> {
+            self.0.write_into(dest, values)
+        }
+    }
+
     impl<S: crate::Template + ?Sized> filters::WriteWritable for &filters::Writable<'_, S> {
         #[inline]
         fn askama_write<W: fmt::Write + ?Sized>(

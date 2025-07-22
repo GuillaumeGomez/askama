@@ -2,6 +2,9 @@
 #![deny(elided_lifetimes_in_paths)]
 #![deny(unreachable_pub)]
 
+#[macro_use]
+mod macros;
+
 mod config;
 mod generator;
 mod heritage;
@@ -30,7 +33,7 @@ use std::sync::Mutex;
 
 use parser::{Parsed, ascii_str, strip_common};
 use proc_macro2::{Span, TokenStream};
-use quote::{quote, quote_spanned};
+use quote::quote;
 use rustc_hash::FxBuildHasher;
 
 use crate::config::{Config, read_config_file};
@@ -249,36 +252,21 @@ pub fn derive_template(input: TokenStream, import_askama: fn() -> TokenStream) -
         .map(|a| a.take_crate_name())
         .unwrap_or_default();
 
-    let ts = args
-        .and_then(|args| build_template(&mut buf, &ast, args))
-        .map(|_| {
-            let src = buf.as_str();
-            match src.parse() {
-                Ok(ts) => ts,
-                Err(err) => panic!(
-                    "Unparsable code was generated. Please report this bug to us: \
-                    <https://github.com/askama-rs/askama/issues>\n\n\
-                    Error: {err}\n\n\
-                    Generated source:\n\
-                    ------------------------------------------------\n\
-                    {}\n\
-                    ------------------------------------------------\n\n",
-                    src.replace('\u{1b}', " "),
-                ),
-            }
-        })
-        .unwrap_or_else(|CompileError { msg, span }| {
-            let mut ts = quote_spanned! {
+    let ts = match args.and_then(|args| build_template(&mut buf, &ast, args)) {
+        Ok(_) => buf.into_token_stream(),
+        Err(CompileError { msg, span }) => {
+            let mut ts = quote::quote_spanned! {
                 span.unwrap_or(ast.ident.span()) =>
                 askama::helpers::core::compile_error!(#msg);
             };
             buf.clear();
             if build_skeleton(&mut buf, &ast).is_ok() {
-                let source: TokenStream = buf.into_string().parse().unwrap();
+                let source: TokenStream = buf.into_token_stream();
                 ts.extend(source);
             }
             ts
-        });
+        }
+    };
     let import_askama = match crate_name {
         Some(crate_name) => quote!(use #crate_name as askama;),
         None => import_askama(),
@@ -398,10 +386,9 @@ fn build_template_item(
         eprintln!("{:?}", templates[&input.path].nodes());
     }
 
-    let mark = buf.get_mark();
     let size_hint = template_to_string(buf, &input, &contexts, heritage.as_ref(), tmpl_kind)?;
     if input.print == Print::Code || input.print == Print::All {
-        eprintln!("{}", buf.marked_text(mark));
+        eprintln!("{}", buf.to_string());
     }
     Ok(size_hint)
 }

@@ -146,8 +146,16 @@ impl<'a> Context<'a> {
         })
     }
 
+    pub(crate) fn span(&self) -> Option<proc_macro2::Span> {
+        self.literal.as_ref().map(|lit| lit.span())
+    }
+
     pub(crate) fn generate_error(&self, msg: impl fmt::Display, node: Span<'_>) -> CompileError {
         let file_info = self.file_info_of(node);
+        CompileError::new_with_span(msg, file_info, self.span_for_node(node))
+    }
+
+    pub(crate) fn span_for_node(&self, node: Span<'_>) -> Option<proc_macro2::Span> {
         if let Some(LiteralOrSpan::Literal(ref literal)) = self.literal
             && let source = self.parsed.source()
             && let Some(mut offset) = node.offset_from(source)
@@ -155,13 +163,9 @@ impl<'a> Context<'a> {
             && let Some(extra) = original_code.find('"')
         {
             offset += extra + 1;
-            CompileError::new_with_span(
-                msg,
-                file_info,
-                literal.subspan(offset..offset + node.len()),
-            )
+            literal.subspan(offset..offset + node.len())
         } else {
-            CompileError::new(msg, file_info)
+            None
         }
     }
 

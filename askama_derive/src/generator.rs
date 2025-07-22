@@ -14,6 +14,7 @@ use parser::node::{Call, Macro, Whitespace};
 use parser::{
     CharLit, Expr, FloatKind, IntKind, MAX_RUST_KEYWORD_LEN, Num, RUST_KEYWORDS, StrLit, WithSpan,
 };
+use proc_macro2::TokenStream;
 use rustc_hash::FxBuildHasher;
 
 use crate::ascii_str::{AsciiChar, AsciiStr};
@@ -49,6 +50,7 @@ pub(crate) fn template_to_string(
     if tmpl_kind == TmplKind::Struct {
         impl_everything(input.ast, buf);
     }
+    // eprintln!("-----> {}", buf.to_string());
     Ok(size_hint)
 }
 
@@ -123,34 +125,21 @@ impl<'a, 'h> Generator<'a, 'h> {
     ) -> Result<usize, CompileError> {
         let ctx = &self.contexts[&self.input.path];
 
+        let span = ctx.span();
         let target = match tmpl_kind {
-            TmplKind::Struct => "askama::Template",
-            TmplKind::Variant => "askama::helpers::EnumVariantTemplate",
-            TmplKind::Block(trait_name) => trait_name,
+            TmplKind::Struct => spanned!(span=> askama::Template),
+            TmplKind::Variant => spanned!(span=> askama::helpers::EnumVariantTemplate),
+            TmplKind::Block(trait_name) => spanned!(span=> #trait_name),
         };
-        write_header(self.input.ast, buf, target);
-        buf.write(
-            "fn render_into_with_values<AskamaW>(\
-                &self,\
-                __askama_writer: &mut AskamaW,\
-                __askama_values: &dyn askama::Values\
-            ) -> askama::Result<()>\
-            where \
-                AskamaW: askama::helpers::core::fmt::Write + ?askama::helpers::core::marker::Sized\
-            {\
-                #[allow(unused_imports)]\
-                use askama::{\
-                    filters::{AutoEscape as _, WriteWritable as _},\
-                    helpers::{ResultConverter as _, core::fmt::Write as _},\
-                };",
-        );
+        write_header(self.input.ast, buf, target, span);
 
+        let mut full_paths = TokenStream::new();
         if let Some(full_config_path) = &self.input.config.full_config_path {
-            buf.write(format_args!(
-                "const _: &[askama::helpers::core::primitive::u8] =\
-                askama::helpers::core::include_bytes!({:?});",
-                full_config_path.display()
-            ));
+            let full_config_path = full_config_path.display().to_string();
+            full_paths = spanned!(span=>
+                const _: &[askama::helpers::core::primitive::u8] =
+                 askama::helpers::core::include_bytes!(#full_config_path);
+            );
         }
 
         // Make sure the compiler understands that the generated code depends on the template files.
@@ -160,32 +149,65 @@ impl<'a, 'h> Generator<'a, 'h> {
             .map(|path| -> &Path { path })
             .collect::<Vec<_>>();
         paths.sort();
-        for path in paths {
-            // Skip the fake path of templates defined in rust source.
-            let path_is_valid = match self.input.source {
-                #[cfg(feature = "external-sources")]
-                Source::Path(_) => true,
-                Source::Source(_) => path != &*self.input.path,
-            };
-            if path_is_valid {
-                buf.write(format_args!(
-                    "const _: &[askama::helpers::core::primitive::u8] =\
-                        askama::helpers::core::include_bytes!({:#?});",
-                    path.canonicalize().as_deref().unwrap_or(path),
+        let paths = paths
+            .into_iter()
+            .filter(|path| {
+                // Skip the fake path of templates defined in rust source.
+                match self.input.source {
+                    #[cfg(feature = "external-sources")]
+                    Source::Path(_) => true,
+                    Source::Source(_) => **path != *self.input.path,
+                }
+            })
+            .fold(TokenStream::new(), |mut acc, path| {
+                let path = path
+                    .canonicalize()
+                    .as_deref()
+                    .unwrap_or(path)
+                    .display()
+                    .to_string();
+                acc.extend(spanned!(span=>
+                    const _: &[askama::helpers::core::primitive::u8] =
+                        askama::helpers::core::include_bytes!(#path);
                 ));
-            }
-        }
+                acc
+            });
 
-        let size_hint = self.impl_template_inner(ctx, buf)?;
+        let mut content = Buffer::new();
+        let size_hint = self.impl_template_inner(ctx, &mut content)?;
+        let content = content.into_token_stream();
 
-        buf.write("askama::Result::Ok(()) }");
+        let mut size_hint_s = TokenStream::new();
         if tmpl_kind == TmplKind::Struct {
-            buf.write(format_args!(
-                "const SIZE_HINT: askama::helpers::core::primitive::usize = {size_hint}usize;",
-            ));
+            size_hint_s = spanned!(span=>
+                const SIZE_HINT: askama::helpers::core::primitive::usize = #size_hint;
+            );
         }
 
-        buf.write('}');
+        buf.write(spanned!(span=>
+{
+    fn render_into_with_values<AskamaW>(
+        &self,
+        __askama_writer: &mut AskamaW,
+        __askama_values: &dyn askama::Values
+    ) -> askama::Result<()>
+    where
+        AskamaW: askama::helpers::core::fmt::Write + ?askama::helpers::core::marker::Sized
+    {
+        #[allow(unused_imports)]
+        use askama::{
+            filters::{AutoEscape as _, WriteWritable as _},
+            helpers::{ResultConverter as _, core::fmt::Write as _},
+        };
+
+        #full_paths
+        #paths
+        #content
+        askama::Result::Ok(())
+    }
+    #size_hint_s
+}
+        ), None);
 
         #[cfg(feature = "blocks")]
         for block in self.input.blocks {
@@ -207,7 +229,6 @@ impl<'a, 'h> Generator<'a, 'h> {
         // - impl Template for __Askama__Self__as__block__Wrapper { fn render_into_with_values() } ->
         // - impl __Askama__Self__as__block for Self { render_into_with_values() }
 
-        use quote::quote_spanned;
         use syn::{GenericParam, Ident, Lifetime, LifetimeParam, Token};
 
         let span = block.span;
@@ -215,6 +236,7 @@ impl<'a, 'h> Generator<'a, 'h> {
             "\
             #[allow(missing_docs, non_camel_case_types, non_snake_case, unreachable_pub)]\
             const _: () = {",
+            Some(span),
         );
 
         let ident = &self.input.ast.ident;
@@ -261,8 +283,8 @@ impl<'a, 'h> Generator<'a, 'h> {
             TmplKind::Block(&trait_name),
         )?;
 
-        buf.write(quote_spanned! {
-            span =>
+        buf.write(quote::quote_spanned! {
+            span=>
             pub trait #trait_id {
                 fn render_into_with_values<AskamaW>(
                     &self,
@@ -337,9 +359,9 @@ impl<'a, 'h> Generator<'a, 'h> {
                         .map_err(|_| askama::helpers::core::fmt::Error)
                 }
             }
-        });
+        }, None);
 
-        buf.write("};");
+        buf.write("};", Some(span));
         Ok(())
     }
 
@@ -373,7 +395,7 @@ const _: () = {
 
 /// In here, we inspect in the expression if it is a literal, and if it is, whether it
 /// can be escaped at compile time.
-fn compile_time_escape<'a>(expr: &Expr<'a>, escaper: &str) -> Option<Writable<'a>> {
+fn compile_time_escape<'a>(expr: &WithSpan<'a, Expr<'a>>, escaper: &str) -> Option<Writable<'a>> {
     // we only optimize for known escapers
     enum OutputKind {
         Html,
@@ -388,7 +410,7 @@ fn compile_time_escape<'a>(expr: &Expr<'a>, escaper: &str) -> Option<Writable<'a
     };
 
     // for now, we only escape strings, chars, numbers, and bools at compile time
-    let value = match *expr {
+    let value = match **expr {
         Expr::StrLit(StrLit {
             prefix: None,
             content,
@@ -478,13 +500,13 @@ fn compile_time_escape<'a>(expr: &Expr<'a>, escaper: &str) -> Option<Writable<'a
 
     // escape the un-string-escaped input using the selected escaper
     Some(Writable::Lit(match output {
-        OutputKind::Text => value,
+        OutputKind::Text => WithSpan::new_with_full(value, expr.span()),
         OutputKind::Html => {
             let mut escaped = String::with_capacity(value.len() + 20);
             write_escaped_str(&mut escaped, &value).ok()?;
             match escaped == value {
-                true => value,
-                false => Cow::Owned(escaped),
+                true => WithSpan::new_with_full(value, expr.span()),
+                false => WithSpan::new_with_full(Cow::Owned(escaped), expr.span()),
             }
         }
     }))
@@ -716,7 +738,7 @@ impl<'a> Deref for WritableBuffer<'a> {
 
 #[derive(Debug)]
 enum Writable<'a> {
-    Lit(Cow<'a, str>),
+    Lit(WithSpan<'a, Cow<'a, str>>),
     Expr(&'a WithSpan<'a, Expr<'a>>),
 }
 

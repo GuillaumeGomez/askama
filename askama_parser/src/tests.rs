@@ -1503,11 +1503,11 @@ fn test_raw() {
         .nodes,
         vec![Node::Raw(WithSpan::no_span(Raw {
             ws1: Ws(Some(Whitespace::Preserve), Some(Whitespace::Suppress)),
-            lit: Lit {
+            lit: WithSpan::no_span(Lit {
                 lws: " ",
                 val,
                 rws: " ",
-            },
+            }),
             ws2: Ws(Some(Whitespace::Minimize), Some(Whitespace::Minimize)),
         }))],
     );
@@ -1527,11 +1527,11 @@ fn test_raw() {
             .nodes,
         vec![Node::Raw(WithSpan::no_span(Raw {
             ws1: Ws(Some(Whitespace::Suppress), Some(Whitespace::Suppress)),
-            lit: Lit {
+            lit: WithSpan::no_span(Lit {
                 lws: " ",
                 val: "-$- endraw",
                 rws: " ",
-            },
+            }),
             ws2: Ws(None, Some(Whitespace::Suppress)),
         }))],
     );

@@ -1124,7 +1124,7 @@ impl<'a> Lit<'a> {
 #[derive(Debug, PartialEq)]
 pub struct Raw<'a> {
     pub ws1: Ws,
-    pub lit: Lit<'a>,
+    pub lit: WithSpan<'a, Lit<'a>>,
     pub ws2: Ws,
 }
 
@@ -1176,7 +1176,7 @@ impl<'a> Raw<'a> {
         );
 
         let (pws, (nws, (ws2, content))) = p.parse_next(i)?;
-        let lit = Lit::split_ws_parts(content);
+        let lit = WithSpan::new_with_full(Lit::split_ws_parts(content), content);
         let ws1 = Ws(pws, nws);
         Ok(WithSpan::new(Self { ws1, lit, ws2 }, start, i))
     }
